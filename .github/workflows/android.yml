@@ -85,10 +85,33 @@ jobs:
       - name: Build ARM64 Android release APK
         run: gradle -p android :app:assembleRelease --no-daemon --stacktrace
 
+      - name: Verify APK contains launch activity, DEX and ARM64 JNI library
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          apk = Path("android/app/build/outputs/apk/release/app-release.apk")
+          if not apk.is_file():
+              raise SystemExit("ERROR: missing release APK")
+          with zipfile.ZipFile(apk) as archive:
+              names = set(archive.namelist())
+              dexes = sorted(n for n in names if n.startswith("classes") and n.endswith(".dex"))
+              if not dexes:
+                  raise SystemExit("ERROR: APK has no classes.dex — MainActivity cannot launch")
+              if not any(b"Lcom/jude/tetrisnesrust/MainActivity;" in archive.read(n) for n in dexes):
+                  raise SystemExit("ERROR: MainActivity is missing from APK DEX")
+              if "lib/arm64-v8a/libtetris_jni.so" not in names:
+                  raise SystemExit("ERROR: ARM64 native library missing")
+              if "AndroidManifest.xml" not in names:
+                  raise SystemExit("ERROR: Android manifest missing")
+              print(f"PASS: launch activity, {len(dexes)} DEX file(s), ARM64 library; APK size {apk.stat().st_size:,} bytes")
+          PY
+
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: TetrisNESRust-v0.2.1-arm64-apk
+          name: TetrisNESRust-v0.2.2-arm64-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
@@ -98,11 +121,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk TetrisNESRust-v0.2.1-arm64.apk
-          if gh release view v0.2.1 >/dev/null 2>&1; then
-            gh release upload v0.2.1 TetrisNESRust-v0.2.1-arm64.apk --clobber
+          cp android/app/build/outputs/apk/release/app-release.apk TetrisNESRust-v0.2.2-arm64.apk
+          if gh release view v0.2.2 >/dev/null 2>&1; then
+            gh release upload v0.2.2 TetrisNESRust-v0.2.2-arm64.apk --clobber
           else
-            gh release create v0.2.1 TetrisNESRust-v0.2.1-arm64.apk --title "Tetris NES Rust v0.2.1 (ARM64)" --notes "Native Rust Android build, no audio. Release signed for testing unless personal signing secrets were configured." --prerelease
+            gh release create v0.2.2 TetrisNESRust-v0.2.2-arm64.apk --title "Tetris NES Rust v0.2.2 (ARM64)" --notes "Native Rust Android build, no audio. Release signed for testing unless personal signing secrets were configured." --prerelease
           fi
 
       - name: Publish unpacked source files to repository
