@@ -1,4 +1,7 @@
-plugins { id("com.android.application") }
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
 
 android {
     namespace = "com.jude.tetrisnesrust"
@@ -10,8 +13,8 @@ android {
         minSdk = 23
         targetSdk = 35
         ndk { abiFilters += listOf("arm64-v8a") }
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 4
+        versionName = "0.2.2"
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17", "-fexceptions")
