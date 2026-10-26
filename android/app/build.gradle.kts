@@ -6,6 +6,11 @@ plugins {
 android {
     namespace = "com.jude.tetrisnesrust"
     compileSdk = 35
+    // Java and Kotlin must target the same JVM bytecode level.
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
     ndkVersion = "27.2.12479018"
 
     defaultConfig {
