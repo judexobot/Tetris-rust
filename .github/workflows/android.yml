@@ -1,0 +1,109 @@
+name: Android Rust APK (ARM64)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Unpack and verify initial Rust source
+        shell: bash
+        run: |
+          if [ -f .github/source.tar.xz.b64 ]; then
+            base64 --decode .github/source.tar.xz.b64 > /tmp/tetris-native-source.tar.xz
+            echo '307a96f7483dcf7ccc6069538450d91e6f73afd3a8724bec9b74a463fd515413  /tmp/tetris-native-source.tar.xz' | sha256sum -c -
+            tar -xJf /tmp/tetris-native-source.tar.xz
+          fi
+          test -f core/src/lib.rs
+          test -f android/app/src/main/cpp/native_bridge.cpp
+          test -f core/assets/game.raw
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK and CMake
+        run: |
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;27.2.12479018'
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Rust stable for ARM64 Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Cargo NDK
+        run: cargo install cargo-ndk --locked
+
+      - name: Rust unit tests
+        run: cargo test --workspace --locked
+
+      - name: Cross-compile native Rust static library
+        run: |
+          cargo ndk -t arm64-v8a build -p tetris_nes_core --release --locked
+          mkdir -p android/app/src/main/cpp/prebuilt/arm64-v8a
+          cp target/aarch64-linux-android/release/libtetris_nes_core.a android/app/src/main/cpp/prebuilt/arm64-v8a/
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Optional signing with personal keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 -d > android/app/release.keystore
+            echo "RELEASE_KEYSTORE_PATH=release.keystore" >> "$GITHUB_ENV"
+            echo "RELEASE_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
+            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build ARM64 Android release APK
+        run: gradle -p android :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TetrisNESRust-v0.2.1-arm64-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish unpacked source files to repository
+        if: success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ ! -f .github/source.tar.xz.b64 ]; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock core android tools README.md
+          git rm -f .github/source.tar.xz.b64
+          git commit -m "Publish extracted Rust Android 0.2.1 sources"
+          git push origin HEAD:main
