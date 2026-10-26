@@ -93,6 +93,18 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Publish direct-download APK release
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk TetrisNESRust-v0.2.1-arm64.apk
+          if gh release view v0.2.1 >/dev/null 2>&1; then
+            gh release upload v0.2.1 TetrisNESRust-v0.2.1-arm64.apk --clobber
+          else
+            gh release create v0.2.1 TetrisNESRust-v0.2.1-arm64.apk --title "Tetris NES Rust v0.2.1 (ARM64)" --notes "Native Rust Android build, no audio. Release signed for testing unless personal signing secrets were configured." --prerelease
+          fi
+
       - name: Publish unpacked source files to repository
         if: success()
         continue-on-error: true
