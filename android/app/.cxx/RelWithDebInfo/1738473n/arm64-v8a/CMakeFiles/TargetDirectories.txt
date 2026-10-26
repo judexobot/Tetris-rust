@@ -1,0 +1,3 @@
+/home/runner/work/Tetris-rust/Tetris-rust/android/app/.cxx/RelWithDebInfo/1738473n/arm64-v8a/CMakeFiles/tetris_jni.dir
+/home/runner/work/Tetris-rust/Tetris-rust/android/app/.cxx/RelWithDebInfo/1738473n/arm64-v8a/CMakeFiles/edit_cache.dir
+/home/runner/work/Tetris-rust/Tetris-rust/android/app/.cxx/RelWithDebInfo/1738473n/arm64-v8a/CMakeFiles/rebuild_cache.dir

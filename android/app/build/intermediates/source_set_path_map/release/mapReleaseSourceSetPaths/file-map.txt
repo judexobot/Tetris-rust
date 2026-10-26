@@ -1,0 +1,7 @@
+com.jude.tetrisnesrust.app-pngs-0 /home/runner/work/Tetris-rust/Tetris-rust/android/app/build/generated/res/pngs/release
+com.jude.tetrisnesrust.app-resValues-1 /home/runner/work/Tetris-rust/Tetris-rust/android/app/build/generated/res/resValues/release
+com.jude.tetrisnesrust.app-packageReleaseResources-2 /home/runner/work/Tetris-rust/Tetris-rust/android/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
+com.jude.tetrisnesrust.app-packageReleaseResources-3 /home/runner/work/Tetris-rust/Tetris-rust/android/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
+com.jude.tetrisnesrust.app-release-4 /home/runner/work/Tetris-rust/Tetris-rust/android/app/build/intermediates/merged_res/release/mergeReleaseResources
+com.jude.tetrisnesrust.app-main-5 /home/runner/work/Tetris-rust/Tetris-rust/android/app/src/main/res
+com.jude.tetrisnesrust.app-release-6 /home/runner/work/Tetris-rust/Tetris-rust/android/app/src/release/res

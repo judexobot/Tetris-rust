@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/runner/work/Tetris-rust/Tetris-rust/android/app/.cxx/RelWithDebInfo/1738473n/arm64-v8a",
+  "command": "/usr/local/lib/android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/bin/clang++ --target=aarch64-none-linux-android23 --sysroot=/usr/local/lib/android/sdk/ndk/27.2.12479018/toolchains/llvm/prebuilt/linux-x86_64/sysroot -Dtetris_jni_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -Wformat -Werror=format-security  -std=c++17 -fexceptions -O2 -g -DNDEBUG -fPIC -o CMakeFiles/tetris_jni.dir/native_bridge.cpp.o -c /home/runner/work/Tetris-rust/Tetris-rust/android/app/src/main/cpp/native_bridge.cpp",
+  "file": "/home/runner/work/Tetris-rust/Tetris-rust/android/app/src/main/cpp/native_bridge.cpp"
+}
+]
