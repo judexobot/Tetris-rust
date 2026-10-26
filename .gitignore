@@ -1,0 +1,12 @@
+/target/
+.gradle/
+**/.gradle/
+**/build/
+**/.cxx/
+**/.kotlin/
+*.keystore
+*.jks
+**/local.properties
+/android/app/src/main/cpp/prebuilt/
+.DS_Store
+*.log

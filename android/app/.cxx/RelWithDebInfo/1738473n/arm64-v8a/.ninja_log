@@ -1,3 +1,0 @@
-# ninja log v5
-0	26	1792983786596506688	CMakeFiles/tetris_jni.dir/native_bridge.cpp.o	bb7b50dda178ae9f
-26	52	1792983786621506870	/home/runner/work/Tetris-rust/Tetris-rust/android/app/build/intermediates/cxx/RelWithDebInfo/1738473n/obj/arm64-v8a/libtetris_jni.so	8458f3643d56ce8e
