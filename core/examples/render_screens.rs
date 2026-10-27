@@ -52,5 +52,12 @@ fn main() -> io::Result<()> {
         game.tick(0);
     }
     write_frame(&game, &dir.join("game_over.ppm"))?;
+    let mut ending_a = Game::with_seed(0x8889);
+    ending_a.score = 100_000;
+    ending_a.scene = Scene::GameOver;
+    for _ in 0..272 {
+        ending_a.tick(0);
+    }
+    write_frame(&ending_a, &dir.join("ending_a.ppm"))?;
     Ok(())
 }

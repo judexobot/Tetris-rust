@@ -59,7 +59,7 @@ jobs:
           else
             echo 'No persistent signing key configured; this APK uses the runner debug key and cannot be relied on for upgrades.'
           fi
-          gradle -p android :app:assembleRelease --no-daemon
+          gradle -p android :app:assembleRelease :app:assembleReleaseAndroidTest --no-daemon
       - name: Inspect APK, native exports and signature
         run: tools/tests/verify_apk.sh android/app/build/outputs/apk/release/app-release.apk
       - name: Enable KVM
@@ -82,13 +82,7 @@ jobs:
           target: google_apis
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: |
-            if tools/tests/android_smoke.sh target/baseline/*.apk target/baseline-smoke; then
-              echo 'v0.2.2 smoke: PASS' | tee target/baseline-result.txt
-            else
-              echo 'v0.2.2 smoke: FAIL (see captured Logcat)' | tee target/baseline-result.txt
-            fi
-            tools/tests/android_smoke.sh android/app/build/outputs/apk/release/app-release.apk target/android-smoke
+          script: tools/tests/ci_android.sh
       - name: Upload test screenshots and Logcat
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,6 +91,7 @@ jobs:
           path: |
             target/screenshots/*.png
             target/android-smoke/
+            target/android-persistence/
             target/baseline-smoke/
             target/baseline-result.txt
           if-no-files-found: warn

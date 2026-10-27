@@ -5,6 +5,8 @@
 
 use std::slice;
 
+mod ending_sprites;
+
 const W: usize = 10;
 const H: usize = 20;
 const NES_W: usize = 256;
@@ -83,6 +85,7 @@ const LEVEL_MAP: &[u8; 1024] = include_bytes!("../assets/level_menu.map");
 const NAME_ENTRY_MAP: &[u8; 1024] = include_bytes!("../assets/enter_high_score.map");
 const END_A_GFX: &[u8; 16384] = include_bytes!("../assets/typeA_ending.raw");
 const END_B_GFX: &[u8; 16384] = include_bytes!("../assets/typeB_ending.raw");
+const END_A_MAP: &[u8; 1024] = include_bytes!("../assets/type_a_ending.map");
 const END_B_MAP: &[u8; 1024] = include_bytes!("../assets/type_b_ending.map");
 const END_B_9_MAP: &[u8; 1024] = include_bytes!("../assets/type_b_lvl9_ending.map");
 
@@ -96,6 +99,7 @@ pub enum Scene {
     GameOver,
     Won,
     NameEntry,
+    AEnding,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,6 +179,8 @@ pub struct Game {
     record_row: usize,
     record_letter: usize,
     game_over_frame: u32,
+    a_ending_frame: u32,
+    rocket_y: i32,
 }
 
 impl Game {
@@ -236,6 +242,8 @@ impl Game {
             record_row: 0,
             record_letter: 0,
             game_over_frame: 0,
+            a_ending_frame: 0,
+            rocket_y: 0,
         }
     }
 
@@ -566,7 +574,29 @@ impl Game {
             }
             Scene::GameOver => {
                 self.game_over_frame = self.game_over_frame.saturating_add(1);
-                if pressed & START != 0 && self.game_over_frame >= 144 {
+                if !self.game_type_b && self.score >= 30_000 && self.game_over_frame >= 272 {
+                    self.a_ending_frame = 0;
+                    self.rocket_y = if self.score >= 120_000 { 0xc7 } else { 0xbf };
+                    self.scene = Scene::AEnding;
+                } else if (self.game_type_b || self.score < 30_000)
+                    && pressed & START != 0
+                    && self.game_over_frame >= 144
+                {
+                    self.enter_records_or_menu();
+                }
+            }
+            Scene::AEnding => {
+                self.a_ending_frame = self.a_ending_frame.saturating_add(1);
+                if self.a_ending_frame >= 240 && self.rocket_y > 0 {
+                    if self.rocket_y < 0xb0 || self.frame % 2 == 0 {
+                        self.rocket_y -= 1;
+                    }
+                    if self.rocket_y < 0x80 {
+                        self.rocket_y -= 1;
+                    }
+                    self.rocket_y = self.rocket_y.max(0);
+                }
+                if self.rocket_y == 0 && pressed & START != 0 {
                     self.enter_records_or_menu();
                 }
             }
@@ -746,6 +776,7 @@ impl Game {
             Scene::GameType => (MENU_GFX, TYPE_MAP, &MENU_PALETTE),
             Scene::LevelSelect => (MENU_GFX, LEVEL_MAP, &MENU_PALETTE),
             Scene::NameEntry => (MENU_GFX, NAME_ENTRY_MAP, &MENU_PALETTE),
+            Scene::AEnding => (END_A_GFX, END_A_MAP, &ending_palette),
             Scene::Won if self.game_type_b && self.start_level % 10 == 9 => {
                 (END_B_GFX, END_B_9_MAP, &ending_palette)
             }
@@ -784,6 +815,46 @@ impl Game {
             draw_digits(pixels, 120, 40, level_bonus, 5, gfx, color);
             draw_digits(pixels, 120, 48, height_bonus, 5, gfx, color);
             draw_digits(pixels, 112, 72, total, 6, gfx, color);
+            return;
+        }
+        if self.scene == Scene::AEnding {
+            draw_digits(pixels, 112, 32, self.score, 6, END_A_GFX, ending_palette[1]);
+            if self.rocket_y > 0 {
+                let kind = if self.score >= 120_000 {
+                    4
+                } else if self.score >= 100_000 {
+                    3
+                } else if self.score >= 70_000 {
+                    2
+                } else if self.score >= 50_000 {
+                    1
+                } else {
+                    0
+                };
+                let bodies = [
+                    ending_sprites::S3E,
+                    ending_sprites::S41,
+                    ending_sprites::S44,
+                    ending_sprites::S47,
+                    ending_sprites::S4A,
+                ];
+                let jets = [
+                    [ending_sprites::S3F, ending_sprites::S40],
+                    [ending_sprites::S42, ending_sprites::S43],
+                    [ending_sprites::S45, ending_sprites::S46],
+                    [ending_sprites::S48, ending_sprites::S49],
+                    [ending_sprites::S23, ending_sprites::S24],
+                ];
+                let x = [0x54, 0x54, 0x50, 0x48, 0xa0][kind];
+                draw_sprite(pixels, x, self.rocket_y, bodies[kind], &ending_palette);
+                draw_sprite(
+                    pixels,
+                    x,
+                    self.rocket_y,
+                    jets[kind][((self.frame >> 1) & 1) as usize],
+                    &ending_palette,
+                );
+            }
             return;
         }
         match self.scene {
@@ -1072,6 +1143,24 @@ fn draw_tile(
         }
     }
 }
+fn draw_sprite(pixels: &mut [u32], x: i32, y: i32, sprite: &[u8], palettes: &[[u32; 4]; 4]) {
+    for item in sprite.chunks_exact(4) {
+        let top = y + i32::from(item[0] as i8) + 1;
+        let left = x + i32::from(item[3] as i8);
+        let palette = palettes[(item[2] & 3) as usize];
+        let offset = item[1] as usize * 64;
+        for dy in 0..8i32 {
+            for dx in 0..8i32 {
+                let sx = if item[2] & 0x40 != 0 { 7 - dx } else { dx };
+                let sy = if item[2] & 0x80 != 0 { 7 - dy } else { dy };
+                let shade = END_A_GFX[offset + (sy * 8 + sx) as usize] as usize;
+                if shade != 0 {
+                    put(pixels, left + dx, top + dy, palette[shade]);
+                }
+            }
+        }
+    }
+}
 fn draw_mino(pixels: &mut [u32], x: i32, y: i32, kind: u8, pal: [u32; 4]) {
     let tile = match kind {
         1 | 4 | 7 => 0x7b,
@@ -1189,7 +1278,7 @@ pub unsafe extern "C" fn tr_score(handle: *const Game) -> u32 {
 }
 
 /// Scene number: title=0, gameType=1, levelSelect=2, playing=3,
-/// paused=4, gameOver=5, won=6, name entry=7.
+/// paused=4, gameOver=5, won=6, name entry=7, A ending=8.
 #[no_mangle]
 pub unsafe extern "C" fn tr_scene(handle: *const Game) -> u32 {
     handle.as_ref().map_or(0, |g| match g.scene {
@@ -1201,6 +1290,7 @@ pub unsafe extern "C" fn tr_scene(handle: *const Game) -> u32 {
         Scene::GameOver => 5,
         Scene::Won => 6,
         Scene::NameEntry => 7,
+        Scene::AEnding => 8,
     })
 }
 #[no_mangle]
@@ -1639,6 +1729,84 @@ mod tests {
         }
         assert_eq!(loaded.records[0][1], g.records[0][1]);
         assert_eq!(loaded.records[1][1].score, 1_000);
+    }
+    #[test]
+    fn type_a_rocket_requires_30000_and_finishes_before_name_entry() {
+        let mut low = game();
+        low.score = 29_999;
+        low.game_over();
+        for _ in 0..144 {
+            low.tick(0);
+        }
+        low.tick(START);
+        assert_eq!(low.scene, Scene::NameEntry);
+
+        let mut high = game();
+        high.score = 30_000;
+        high.game_over();
+        for _ in 0..271 {
+            high.tick(0);
+        }
+        assert_eq!(high.scene, Scene::GameOver);
+        high.tick(0);
+        assert_eq!(high.scene, Scene::AEnding);
+        high.tick(START);
+        assert_eq!(high.scene, Scene::AEnding);
+        for _ in 0..500 {
+            high.tick(0);
+        }
+        assert_eq!(high.rocket_y, 0);
+        high.tick(START);
+        assert_eq!(high.scene, Scene::NameEntry);
+    }
+    #[test]
+    fn deterministic_sessions_keep_valid_state_for_all_b_heights() {
+        for height in 0..=5 {
+            let mut first = Game::with_seed(0x8889);
+            let mut second = Game::with_seed(0x8889);
+            for g in [&mut first, &mut second] {
+                g.game_type_b = true;
+                g.b_height = height;
+                g.setup();
+            }
+            let mut input_rng = 0x1234_5678u32;
+            for frame in 0..12_000 {
+                input_rng ^= input_rng << 13;
+                input_rng ^= input_rng >> 17;
+                input_rng ^= input_rng << 5;
+                let mut input = match (input_rng >> 8) % 5 {
+                    0 => LEFT,
+                    1 => RIGHT,
+                    2 => DOWN,
+                    _ => 0,
+                };
+                if input_rng & 31 == 0 {
+                    input |= A;
+                }
+                if input_rng & 63 == 1 {
+                    input |= B;
+                }
+                first.tick(input);
+                second.tick(input);
+                if frame % 200 == 0 {
+                    assert_eq!(first.scene, second.scene);
+                    assert_eq!(first.field, second.field);
+                    assert_eq!(
+                        (first.score, first.lines, first.level),
+                        (second.score, second.lines, second.level)
+                    );
+                    assert!(first.field.iter().flatten().all(|&cell| cell <= 7));
+                    assert!(first.score <= 999_999);
+                }
+                if first.scene == Scene::GameOver {
+                    break;
+                }
+            }
+            assert!(
+                first.piece_stats.iter().sum::<u32>() >= 3,
+                "height {height}"
+            );
+        }
     }
     #[test]
     fn all_type_b_heights_keep_only_allowed_rows_and_have_a_hole() {

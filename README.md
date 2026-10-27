@@ -26,6 +26,8 @@ tools/tests/android_smoke.sh android/app/build/outputs/apk/release/app-release.a
 
 La última prueba instala y elimina el paquete existente: úsala únicamente en un emulador desechable. Comprueba actividad, JNI y supervivencia durante una sesión básica, y guarda capturas y Logcat. La imagen `google_apis` x86_64 de Android 35 admite ARM64 mediante `libndk_translation`; esa prueba usa el APK ARM64 real, pero no sustituye una prueba en un teléfono ARM64.
 
+`gradle -p android :app:assembleReleaseAndroidTest` compila la prueba instrumentada de persistencia. Después de instalar el APK principal en un emulador, `tools/tests/android_persistence.sh android/app/build/outputs/apk/androidTest/release/app-release-androidTest.apk target/android-persistence` verifica que una entrada modificada sobreviva a la recreación de la actividad y se restaure a Rust mediante JNI. La prueba modifica las preferencias del emulador.
+
 El workflow ejecuta las pruebas Rust y visuales, compila ARM64, inspecciona firma, manifiesto, DEX, símbolos JNI y alineación para páginas de 16 KB, e instala y ejecuta el APK en un emulador. Sólo sube el APK después de pasar esas pruebas. El tag `v0.3.0` crea la Release únicamente tras el éxito del job. Véanse [fidelidad y pruebas](docs/fidelity.md) y [firma](docs/signing.md).
 
 ## Estado y recursos
