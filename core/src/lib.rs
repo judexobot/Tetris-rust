@@ -771,6 +771,19 @@ impl Game {
         pixels[..NES_W * NES_H].fill(0xFF080817);
         let game_palette = game_palette(self.level);
         let ending_palette = ending_palette();
+        let mut concert_map = *END_B_9_MAP;
+        if self.scene == Scene::Won && self.game_type_b && self.start_level % 10 == 9 {
+            let patches = [
+                ending_sprites::P0,
+                ending_sprites::P1,
+                ending_sprites::P2,
+                ending_sprites::P3,
+                ending_sprites::P4,
+            ];
+            for patch in patches.iter().skip(usize::from(self.b_height.min(5))) {
+                apply_nametable_patch(&mut concert_map, patch);
+            }
+        }
         let (gfx, map, pal): (&[u8; 16384], &[u8; 1024], &[[u32; 4]; 4]) = match self.scene {
             Scene::Title => (MENU_GFX, TITLE_MAP, &MENU_PALETTE),
             Scene::GameType => (MENU_GFX, TYPE_MAP, &MENU_PALETTE),
@@ -778,7 +791,7 @@ impl Game {
             Scene::NameEntry => (MENU_GFX, NAME_ENTRY_MAP, &MENU_PALETTE),
             Scene::AEnding => (END_A_GFX, END_A_MAP, &ending_palette),
             Scene::Won if self.game_type_b && self.start_level % 10 == 9 => {
-                (END_B_GFX, END_B_9_MAP, &ending_palette)
+                (END_B_GFX, &concert_map, &ending_palette)
             }
             Scene::Won if self.game_type_b => (END_A_GFX, END_B_MAP, &ending_palette),
             _ => (GAME_GFX, GAME_MAP, &game_palette),
@@ -815,6 +828,9 @@ impl Game {
             draw_digits(pixels, 120, 40, level_bonus, 5, gfx, color);
             draw_digits(pixels, 120, 48, height_bonus, 5, gfx, color);
             draw_digits(pixels, 112, 72, total, 6, gfx, color);
+            if self.start_level % 10 == 9 {
+                self.draw_b_concert(pixels, &ending_palette);
+            }
             return;
         }
         if self.scene == Scene::AEnding {
@@ -846,12 +862,20 @@ impl Game {
                     [ending_sprites::S23, ending_sprites::S24],
                 ];
                 let x = [0x54, 0x54, 0x50, 0x48, 0xa0][kind];
-                draw_sprite(pixels, x, self.rocket_y, bodies[kind], &ending_palette);
+                draw_sprite(
+                    pixels,
+                    x,
+                    self.rocket_y,
+                    bodies[kind],
+                    END_A_GFX,
+                    &ending_palette,
+                );
                 draw_sprite(
                     pixels,
                     x,
                     self.rocket_y,
                     jets[kind][((self.frame >> 1) & 1) as usize],
+                    END_A_GFX,
                     &ending_palette,
                 );
             }
@@ -1036,6 +1060,83 @@ impl Game {
         }
     }
 
+    fn draw_b_concert(&self, pixels: &mut [u32], palettes: &[[u32; 4]; 4]) {
+        let frame = ((self.frame >> 4) & 1) as usize;
+        let pair = |a, b| if frame == 0 { a } else { b };
+        draw_sprite(
+            pixels,
+            0x28,
+            0x77,
+            pair(ending_sprites::S16, ending_sprites::S17),
+            END_B_GFX,
+            palettes,
+        );
+        if self.b_height >= 1 {
+            draw_sprite(
+                pixels,
+                0xc8,
+                0xd7,
+                pair(ending_sprites::S18, ending_sprites::S19),
+                END_B_GFX,
+                palettes,
+            );
+        }
+        if self.b_height >= 2 {
+            draw_sprite(
+                pixels,
+                0xa8,
+                0xd7,
+                pair(ending_sprites::S1A, ending_sprites::S1B),
+                END_B_GFX,
+                palettes,
+            );
+        }
+        if self.b_height >= 3 {
+            draw_sprite(
+                pixels,
+                0x40,
+                0x77,
+                pair(ending_sprites::S1D, ending_sprites::S1E),
+                END_B_GFX,
+                palettes,
+            );
+        }
+        if self.b_height >= 4 {
+            draw_sprite(
+                pixels,
+                0x30,
+                0xa7,
+                pair(ending_sprites::S1F, ending_sprites::S20),
+                END_B_GFX,
+                palettes,
+            );
+        }
+        if self.b_height >= 5 {
+            let peach = if self.frame & 8 == 0 {
+                ending_sprites::S21
+            } else {
+                ending_sprites::S22
+            };
+            draw_sprite(pixels, 0xc8, 0x47, peach, END_B_GFX, palettes);
+            let mario_step = ((self.frame >> 3) & 3) as usize;
+            let mario_y = [0x97, 0x8f, 0x87, 0x8f][mario_step];
+            let mario = if mario_step == 0 {
+                ending_sprites::S27
+            } else {
+                ending_sprites::S28
+            };
+            draw_sprite(pixels, 0xa0, mario_y, mario, END_B_GFX, palettes);
+            let luigi_step = ((self.win_frame / 8) % 10) as usize;
+            let luigi_y = [0x97, 0x8f, 0x87, 0x87, 0x8f, 0x97, 0x8f, 0x87, 0x87, 0x8f][luigi_step];
+            let luigi = if matches!(luigi_step, 0..=2 | 8 | 9) {
+                ending_sprites::S29
+            } else {
+                ending_sprites::S2A
+            };
+            draw_sprite(pixels, 0xc0, luigi_y, luigi, END_B_GFX, palettes);
+        }
+    }
+
     fn draw_records(&self, pixels: &mut [u32]) {
         const CHARS: [u8; 44] = [
             0x24, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
@@ -1143,7 +1244,29 @@ fn draw_tile(
         }
     }
 }
-fn draw_sprite(pixels: &mut [u32], x: i32, y: i32, sprite: &[u8], palettes: &[[u32; 4]; 4]) {
+fn apply_nametable_patch(map: &mut [u8; 1024], patch: &[u8]) {
+    let mut i = 0;
+    while i < patch.len() && patch[i] != 0xfd {
+        let mut address = (u16::from(patch[i]) << 8) | u16::from(patch[i + 1]);
+        i += 2;
+        while i < patch.len() && patch[i] != 0xfe && patch[i] != 0xfd {
+            map[(address as usize - 0x2000) % 1024] = patch[i];
+            address += 1;
+            i += 1;
+        }
+        if i < patch.len() && patch[i] == 0xfe {
+            i += 1;
+        }
+    }
+}
+fn draw_sprite(
+    pixels: &mut [u32],
+    x: i32,
+    y: i32,
+    sprite: &[u8],
+    gfx: &[u8; 16384],
+    palettes: &[[u32; 4]; 4],
+) {
     for item in sprite.chunks_exact(4) {
         let top = y + i32::from(item[0] as i8) + 1;
         let left = x + i32::from(item[3] as i8);
@@ -1153,7 +1276,7 @@ fn draw_sprite(pixels: &mut [u32], x: i32, y: i32, sprite: &[u8], palettes: &[[u
             for dx in 0..8i32 {
                 let sx = if item[2] & 0x40 != 0 { 7 - dx } else { dx };
                 let sy = if item[2] & 0x80 != 0 { 7 - dy } else { dy };
-                let shade = END_A_GFX[offset + (sy * 8 + sx) as usize] as usize;
+                let shade = gfx[offset + (sy * 8 + sx) as usize] as usize;
                 if shade != 0 {
                     put(pixels, left + dx, top + dy, palette[shade]);
                 }
@@ -1758,6 +1881,24 @@ mod tests {
         assert_eq!(high.rocket_y, 0);
         high.tick(START);
         assert_eq!(high.scene, Scene::NameEntry);
+    }
+    #[test]
+    fn type_b_concert_depends_on_height_and_animates() {
+        let mut game = game();
+        game.game_type_b = true;
+        game.scene = Scene::Won;
+        game.start_level = 9;
+        let mut frame0 = vec![0; NES_W * NES_H];
+        let mut other = frame0.clone();
+        game.b_height = 0;
+        game.frame = 1;
+        game.render(&mut frame0);
+        game.b_height = 5;
+        game.render(&mut other);
+        assert_ne!(frame0, other);
+        game.frame = 17;
+        game.render(&mut frame0);
+        assert_ne!(frame0, other);
     }
     #[test]
     fn deterministic_sessions_keep_valid_state_for_all_b_heights() {
