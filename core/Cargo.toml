@@ -1,6 +1,6 @@
 [package]
 name = "tetris_nes_core"
-version = "0.2.1"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "Native Rust game logic adapted from NES Tetris disassembly (no CPU emulator / no audio)"

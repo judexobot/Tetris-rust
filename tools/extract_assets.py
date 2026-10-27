@@ -69,7 +69,7 @@ def main(archive:Path):
     OUTPUT.mkdir(parents=True,exist_ok=True)
     with ZipFile(archive) as z:
         base=next(n for n in z.namelist() if n.endswith('/main.asm')).removesuffix('main.asm')
-        for name in ('game','title_menu'):
+        for name in ('game','title_menu','typeA_ending','typeB_ending'):
             im=Image.open(BytesIO(z.read(base+f'gfx/{name}_tileset.png'))).convert('L')
             if im.size!=(128,128):raise ValueError('Unexpected atlas size')
             px=list(im.getdata())
@@ -80,7 +80,8 @@ def main(archive:Path):
                     for x in range(8):
                         tilepixels.append(min(3,round(px[(y0+y)*128+x0+x]/85)))
             (OUTPUT/f'{name}.raw').write_bytes(bytes(tilepixels))
-        for name in ('game','game_type_menu','level_menu'):
+        for name in ('game','game_type_menu','level_menu','type_b_ending',
+                     'type_b_lvl9_ending','type_a_ending','high_scores','enter_high_score'):
             raw=z.read(base+f'gfx/nametables/{name}_nametable.bin')
             (OUTPUT/f'{name}.map').write_bytes(map_from_packets(raw))
         raw=parse_asm(z.read(base+'gfx/nametables/title_screen_nametable.asm'))
