@@ -1,144 +1,125 @@
-name: Android Rust APK (ARM64)
+name: Android Rust APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
+    tags: ['v0.3.0']
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 65
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Unpack and verify initial Rust source
-        shell: bash
-        run: |
-          if [ -f .github/source.tar.xz.b64 ]; then
-            base64 --decode .github/source.tar.xz.b64 > /tmp/tetris-native-source.tar.xz
-            echo '307a96f7483dcf7ccc6069538450d91e6f73afd3a8724bec9b74a463fd515413  /tmp/tetris-native-source.tar.xz' | sha256sum -c -
-            tar -xJf /tmp/tetris-native-source.tar.xz
-          fi
-          test -f core/src/lib.rs
-          test -f android/app/src/main/cpp/native_bridge.cpp
-          test -f core/assets/game.raw
-
-      - name: Java 17
-        uses: actions/setup-java@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
-
-      - name: Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install NDK and CMake
+      - uses: android-actions/setup-android@v4
+      - name: Install pinned Android components
         run: |
           sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0' 'cmake;3.22.1' 'ndk;27.2.12479018'
-          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/27.2.12479018" >> "$GITHUB_ENV"
-
-      - name: Rust stable for ARM64 Android
-        uses: dtolnay/rust-toolchain@stable
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: 1.99.1
           targets: aarch64-linux-android
-
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Cargo NDK
-        run: cargo install cargo-ndk --locked
-
-      - name: Rust unit tests
-        run: cargo test --workspace --locked
-
-      - name: Cross-compile native Rust static library
+      - uses: Swatinem/rust-cache@v2
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Rust tests and visual regressions
         run: |
+          cargo test --workspace --locked
+          python3 tools/visual_check.py
+      - name: Compile ARM64 Rust
+        run: |
+          cargo install cargo-ndk --version 4.1.2 --locked
           cargo ndk -t arm64-v8a build -p tetris_nes_core --release --locked
           mkdir -p android/app/src/main/cpp/prebuilt/arm64-v8a
           cp target/aarch64-linux-android/release/libtetris_nes_core.a android/app/src/main/cpp/prebuilt/arm64-v8a/
-
-      - name: Gradle 8.9
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-      - name: Optional signing with personal keystore
+      - name: Assemble release APK
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
           STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            printf '%s' "$KEYSTORE_B64" | base64 -d > android/app/release.keystore
-            echo "RELEASE_KEYSTORE_PATH=release.keystore" >> "$GITHUB_ENV"
-            echo "RELEASE_STORE_PASSWORD=$STORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_ALIAS=$KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "RELEASE_KEY_PASSWORD=$KEY_PASSWORD" >> "$GITHUB_ENV"
+          set -euo pipefail
+          if [ -n "$KEYSTORE_B64$STORE_PASSWORD$KEY_ALIAS$KEY_PASSWORD" ]; then
+            [ -n "$KEYSTORE_B64" ] && [ -n "$STORE_PASSWORD" ] && [ -n "$KEY_ALIAS" ] && [ -n "$KEY_PASSWORD" ] || { echo 'All four Android signing secrets must be configured.' >&2; exit 1; }
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/tetris-release.keystore"
+            export RELEASE_KEYSTORE_PATH="$RUNNER_TEMP/tetris-release.keystore"
+            export RELEASE_STORE_PASSWORD="$STORE_PASSWORD" RELEASE_KEY_ALIAS="$KEY_ALIAS" RELEASE_KEY_PASSWORD="$KEY_PASSWORD"
+          else
+            echo 'No persistent signing key configured; this APK uses the runner debug key and cannot be relied on for upgrades.'
           fi
-
-      - name: Build ARM64 Android release APK
-        run: gradle -p android :app:assembleRelease --no-daemon --stacktrace
-
-      - name: Verify APK contains launch activity, DEX and ARM64 JNI library
-        shell: bash
+          gradle -p android :app:assembleRelease :app:assembleReleaseAndroidTest --no-daemon
+      - name: Inspect APK, native exports and signature
+        run: tools/tests/verify_apk.sh android/app/build/outputs/apk/release/app-release.apk
+      - name: Enable KVM
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import zipfile
-          apk = Path("android/app/build/outputs/apk/release/app-release.apk")
-          if not apk.is_file():
-              raise SystemExit("ERROR: missing release APK")
-          with zipfile.ZipFile(apk) as archive:
-              names = set(archive.namelist())
-              dexes = sorted(n for n in names if n.startswith("classes") and n.endswith(".dex"))
-              if not dexes:
-                  raise SystemExit("ERROR: APK has no classes.dex — MainActivity cannot launch")
-              if not any(b"Lcom/jude/tetrisnesrust/MainActivity;" in archive.read(n) for n in dexes):
-                  raise SystemExit("ERROR: MainActivity is missing from APK DEX")
-              if "lib/arm64-v8a/libtetris_jni.so" not in names:
-                  raise SystemExit("ERROR: ARM64 native library missing")
-              if "AndroidManifest.xml" not in names:
-                  raise SystemExit("ERROR: Android manifest missing")
-              print(f"PASS: launch activity, {len(dexes)} DEX file(s), ARM64 library; APK size {apk.stat().st_size:,} bytes")
-          PY
-
-      - name: Upload installable APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: TetrisNESRust-v0.2.2-arm64-apk
-          path: android/app/build/outputs/apk/release/*.apk
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Publish direct-download APK release
-        continue-on-error: true
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+      - name: Download the published v0.2.2 APK for diagnosis
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk TetrisNESRust-v0.2.2-arm64.apk
-          if gh release view v0.2.2 >/dev/null 2>&1; then
-            gh release upload v0.2.2 TetrisNESRust-v0.2.2-arm64.apk --clobber
-          else
-            gh release create v0.2.2 TetrisNESRust-v0.2.2-arm64.apk --title "Tetris NES Rust v0.2.2 (ARM64)" --notes "Native Rust Android build, no audio. Release signed for testing unless personal signing secrets were configured." --prerelease
-          fi
+          mkdir -p target/baseline
+          gh release download v0.2.2 --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir target/baseline
+      - name: Launch actual ARM64 release APK on Android
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: tools/tests/ci_android.sh
+      - name: Upload test screenshots and Logcat
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-evidence
+          path: |
+            target/screenshots/*.png
+            target/android-smoke/
+            target/android-persistence/
+            target/baseline-smoke/
+            target/baseline-result.txt
+          if-no-files-found: warn
+      - name: Stage validated APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk TetrisNESRust-v0.3.0-arm64.apk
+      - name: Upload validated APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TetrisNESRust-v0.3.0-arm64
+          path: TetrisNESRust-v0.3.0-arm64.apk
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Publish unpacked source files to repository
-        if: success()
-        continue-on-error: true
-        shell: bash
+  release:
+    if: github.ref == 'refs/tags/v0.3.0'
+    needs: build-and-test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: TetrisNESRust-v0.3.0-arm64
+      - name: Create release only after all required checks succeed
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ ! -f .github/source.tar.xz.b64 ]; then
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock core android tools README.md
-          git rm -f .github/source.tar.xz.b64
-          git commit -m "Publish extracted Rust Android 0.2.1 sources"
-          git push origin HEAD:main
+          gh release create v0.3.0 TetrisNESRust-v0.3.0-arm64.apk \
+            --verify-tag --title 'Tetris NES Rust v0.3.0 (ARM64)' \
+            --notes-file docs/release-notes-v0.3.0.md

@@ -1,6 +1,12 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
 }
 
 android {
@@ -17,9 +23,12 @@ android {
         applicationId = "com.jude.tetrisnesrust"
         minSdk = 23
         targetSdk = 35
-        ndk { abiFilters += listOf("arm64-v8a") }
-        versionCode = 4
-        versionName = "0.2.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // CI can build the same app for the x86_64 emulator. Published APKs
+        // remain ARM64 unless explicitly overridden for testing.
+        ndk { abiFilters += listOf(providers.gradleProperty("testAbi").orElse("arm64-v8a").get()) }
+        versionCode = 5
+        versionName = "0.3.0"
         externalNativeBuild {
             cmake {
                 cppFlags += listOf("-std=c++17", "-fexceptions")
@@ -43,10 +52,16 @@ android {
             isMinifyEnabled = false
         }
     }
+    testBuildType = "release"
     externalNativeBuild {
         cmake { path = file("src/main/cpp/CMakeLists.txt") }
     }
     packaging {
         jniLibs { useLegacyPackaging = false }
     }
+}
+
+dependencies {
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
